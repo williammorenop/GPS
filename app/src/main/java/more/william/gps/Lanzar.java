@@ -3,6 +3,8 @@ package more.william.gps;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.Intent;
+import android.content.IntentSender;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.support.annotation.NonNull;
@@ -12,27 +14,32 @@ import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
-import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.google.android.gms.common.api.ApiException;
+import com.google.android.gms.common.api.CommonStatusCodes;
+import com.google.android.gms.common.api.ResolvableApiException;
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationCallback;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.location.LocationSettingsRequest;
+import com.google.android.gms.location.LocationSettingsResponse;
+import com.google.android.gms.location.LocationSettingsStatusCodes;
+import com.google.android.gms.location.SettingsClient;
+import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.android.gms.tasks.Task;
 
 import org.json.JSONArray;
-import org.json.JSONObject;
 
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.Writer;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -79,20 +86,52 @@ public class Lanzar extends AppCompatActivity {
 
         localizaciones = new JSONArray();
 
-
-        //Log.i("11111111111111111111111", "Location update in the callback: ");
         distaciaaero = findViewById(R.id.distaciaaero);
         mLocationRequest = createLocationRequest();
         longi = findViewById(R.id.longitud);
-        //Log.i("2222222222222222", "Location update in the callback: ");
         lat = findViewById(R.id.latitud);
         altitude = findViewById(R.id.altalt);
         refresh = findViewById(R.id.button2);
         guardar = findViewById(R.id.guardar);
-        //Log.i("33333333333333333333", "Location update in the callback: ");
+
         requestPermission(this, Manifest.permission.ACCESS_FINE_LOCATION,
                 "Se necesita acceder a la ubicacion", LOCATION_PERMISSION);
-        //Log.i("44444444444444444444", "Location update in the callback: ");
+
+        LocationSettingsRequest.Builder builder = new
+                LocationSettingsRequest.Builder().addLocationRequest(mLocationRequest);
+        SettingsClient client = LocationServices.getSettingsClient(this);
+        Task<LocationSettingsResponse> task = client.checkLocationSettings(builder.build());
+
+        task.addOnSuccessListener(this, new OnSuccessListener<LocationSettingsResponse>() {
+            @Override
+            public void onSuccess(LocationSettingsResponse locationSettingsResponse) {
+                startLocationUpdates(); //Todas las condiciones para recibir localizaciones
+            }
+        });
+
+        task.addOnFailureListener(this, new OnFailureListener() {
+            @Override
+            public void onFailure(@NonNull Exception e) {
+                int statusCode = ((ApiException) e).getStatusCode();
+                switch (statusCode) {
+                    case CommonStatusCodes.RESOLUTION_REQUIRED:
+// Location settings are not satisfied, but this can be fixed by showing the user a dialog.
+                        try {// Show the dialog by calling startResolutionForResult(), and check the result in onActivityResult().
+                            ResolvableApiException resolvable = (ResolvableApiException) e;
+                            resolvable.startResolutionForResult(Lanzar.this ,
+                                    LOCATION_PERMISSION);
+                        } catch (IntentSender.SendIntentException sendEx) {
+// Ignore the error.
+                        } break;
+                    case LocationSettingsStatusCodes.SETTINGS_CHANGE_UNAVAILABLE:
+// Location settings are not satisfied. No way to fix the settings so we won't show the dialog.
+                        break;
+                }
+            }
+        });
+
+
+
 
         mLocationCallback = new LocationCallback() {
             @SuppressLint("SetTextI18n")
@@ -112,7 +151,6 @@ public class Lanzar extends AppCompatActivity {
         };
 
         mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
-        //Log.i("555555555555555555555", "Location update in the callback: ");
 
         refresh.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -127,8 +165,22 @@ public class Lanzar extends AppCompatActivity {
                 writeJSONObject();
             }
         });
-        //Log.i("6666666666666666", "Location update in the callback: ");
-        //LocationView();
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        switch (requestCode) {
+            case LOCATION_PERMISSION: {
+                if (resultCode == RESULT_OK) {
+                    startLocationUpdates(); //Se encendió la localización!!!
+                } else {
+                    Toast.makeText(this,
+                            "Sin acceso a localización, hardware deshabilitado!",
+                            Toast.LENGTH_LONG).show();
+                }
+                return;
+            }
+        }
     }
 
     public double distanceaero(double lat1, double long1, double lat2, double long2) {
